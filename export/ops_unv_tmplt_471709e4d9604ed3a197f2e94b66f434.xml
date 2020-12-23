@@ -1,0 +1,279 @@
+<?xml version="1.0" encoding="UTF-8"?><unload unload_date="2020-07-08 15:28:31" unload_format="1" unload_table="ops_unv_tmplt" unload_version="6.8.0.0"><ops_unv_tmplt action="INSERT_OR_UPDATE"><credentials_var/><agent/><icon_date_created>2020-02-14 10:26:13</icon_date_created><sys_updated_on>2020-07-08 10:16:56</sys_updated_on><output_return_text/><sys_updated_by>Ravi</sys_updated_by><sys_created_on>2020-07-05 21:04:39</sys_created_on><agent_cluster_var/><agent_cluster_var_check>false</agent_cluster_var_check><wait_for_output>false</wait_for_output><sys_created_by>Ravi</sys_created_by><output_return_nline>100</output_return_nline><exit_code_text/><exit_code_fr>0</exit_code_fr><runtime_dir/><output_return_type>6</output_return_type><script>#!/opt/universal/python3.6/bin/python3
+# --
+#         Origins: Stonebranch
+#          Author: Ravi Murugesan
+#            Date: 06-July-2020
+#
+#    Copyright (c) Stonebranch, 2019.  All rights reserved.
+#
+#         Purpose: This Task is to perform the below functionalities with the Azure VM
+#                  * Start VM
+#                  * Stop VM
+#                  * Terminate VM
+#                  * VM Status  
+#                  * List All VM status 
+#         Note : oauth2.0 generated access token will be used to make API and the access token needs to be stored
+#                in the controller variable : Azure_vm_access_token
+#
+version = "0.1"
+#           Version History:    0.1     Ravi Murugesan     06-Jul-2020     Initial Version  
+#                               0.2     Ravi Murugesan     08-Jul-2020     Incoporate wait mechanism for VM start and stop
+#
+# --Import the required modules for execution
+import argparse, logging, sys, uuid, time, datetime, json, requests
+# -- loglevel settings INFO,DEBUG, WARNING, ERROR, CRITICAL
+logging.basicConfig(level=logging.INFO, format=' %(asctime)s - %(levelname)s - %(message)s')
+# -- Main Logic Function
+def main():
+    ScriptSetup()                                               # -- Import Required Modules, Setup Logging Format, Set Variables 
+    if args.function == "start_vm":
+        start_vm()
+    elif args.function == "stop_vm":
+        stop_vm()
+    elif args.function == "terminate_vm":
+        terminate_vm()
+    elif args.function == "vm_status":
+        status="normal_check"
+        check_vm_status(status)
+    elif args.function == "list_all_vm":
+        list_all_vm_status()                                   
+                     
+# --
+# -- Import Required Modules, Setup Logging Format, Set Variables 
+def ScriptSetup():
+    parser=argparse.ArgumentParser(description='Purpose : Azure VM operations')
+    
+    # ## --&gt; Capture Universal Task Form Variables Here
+    parser.add_argument("--function", default="${ops_VM_function}")
+    parser.add_argument("--resource_group_name", default="${ops_VM_resource_group_name}")
+    parser.add_argument("--subscription_id", default="${ops_VM_subscription_id}")
+    parser.add_argument("--vm_name", default="${ops_VM_vm_name}")
+    parser.add_argument('--api_version', default='${ops_VM_api_version}')
+    parser.add_argument('--Azure_vm_access_token', default="${${ops_VM_access_token_variable}}")
+    # ## --
+    global args
+    args = parser.parse_args()
+    #access_token="${${ops_VM_access_token_variable}}"
+    # ## --&gt; Logging info
+    parser.add_argument("--logginglevel", default="info")
+    logging.info("Executing version " + version + " with the following paramaters")
+    logging.info(args)
+# --
+
+# ## --&gt; Functions Go Here
+def start_vm():
+    logging.info("Invoke start Azure Vm function")
+    # -- Set the request parameters
+    url = 'https://management.azure.com/subscriptions/'+args.subscription_id+'/resourceGroups/'\
+        +args.resource_group_name+'/providers/Microsoft.Compute/virtualMachines/'+args.vm_name \
+        +'/start?api-version='+args.api_version
+    logging.info("Azure API URL: "+url)
+    #logging.info("token:"+args.Azure_vm_access_token)
+    token="Bearer "+args.Azure_vm_access_token
+    header={'Authorization':token,'content-type':'application/json', 'accept':'application/json'}
+    try:
+        logging.info('Attempting to make Azure Post API call to start VM')
+        response=requests.post(url,headers=header)
+        if(response.status_code !=202):
+            logging.error("Error in starting the VM:"+args.vm_name)
+            logging.error(response)
+            if(response.status_code == 401):
+                logging.error("Bearer access Token expired or incorrect")
+            elif (response.status_code == 204):
+                logging.error("No Content")
+            sys.exit(1)
+        else:
+            logging.info("Response from Azure API call :"+str(response))
+            print("Request to start VM:"+args.vm_name+" is accepted")
+            check_status="Running"
+            check_vm_status(check_status)
+    except Exception as e:
+        logging.error(" Error Response :"+ response.text)
+        logging.error(e)
+        sys.exit(1)
+
+def stop_vm():
+    logging.info("Invoking Azure Stop VM function")
+    # -- Set the request parameters
+    url = 'https://management.azure.com/subscriptions/'+args.subscription_id+'/resourceGroups/'\
+        +args.resource_group_name+'/providers/Microsoft.Compute/virtualMachines/'+args.vm_name \
+        +'/poweroff?api-version='+args.api_version
+    logging.info("Azure API URL: "+url)
+    #logging.info("token:"+args.Azure_vm_access_token)
+    token="Bearer "+args.Azure_vm_access_token
+    header={'Authorization':token,'content-type':'application/json', 'accept':'application/json'}
+    try:
+        logging.info('Attempting to make Azure Post API call to Stop VM')
+        response=requests.post(url,headers=header)
+        if (response.status_code != 202):
+            logging.error("Error in stopping the VM:"+args.vm_name)
+            logging.error(response)
+            if(response.status_code == 401):
+                logging.error("Bearer access Token expired or incorrect")
+            elif (response.status_code == 204):
+                logging.error("No Content")
+            sys.exit(1)
+        else:
+            logging.info("Response from Azure API call :"+str(response))
+            print("Request to stop VM:"+args.vm_name+" is accepted")
+            check_status="Stopped"
+            check_vm_status(check_status)
+    except Exception as e:
+        logging.error(" Error Response :"+ response.text)
+        logging.error(e)
+        sys.exit(1)
+
+############################################################################################################################
+# Terminate VM function will call Azure VM Delete API and as soon as soon as 202 return code is returned the Job will go success
+#
+#############################################################################################################################
+def terminate_vm():
+    logging.info("Invoking Azure Delete VM function")
+    ## Set the request parameters to terminate the VM
+    url = 'https://management.azure.com/subscriptions/'+args.subscription_id+'/resourceGroups/'\
+        +args.resource_group_name+'/providers/Microsoft.Compute/virtualMachines/'+args.vm_name \
+        +'?api-version='+args.api_version
+    logging.info("Azure API URL: "+url)
+    #logging.info("token:"+args.Azure_vm_access_token)
+    token="Bearer "+args.Azure_vm_access_token
+    header={'Authorization':token,'content-type':'application/json', 'accept':'application/json'}
+    try:
+        logging.info('Attempting to make Azure Post API call to Delete VM')
+        response=requests.delete(url,headers=header)
+        if (response.status_code != 202):
+            logging.error("Error in Deleting the VM:"+args.vm_name)
+            logging.error(response)
+            if(response.status_code == 401):
+                logging.error("Bearer access Token expired or incorrect")
+            elif (response.status_code == 204):
+                logging.error("No Content")
+            sys.exit(1)
+        else:
+            logging.info("Response from Azure API call :"+str(response))
+            print("Request to Delete VM:"+args.vm_name+" is accepted")
+            check_status="check_delete"
+            check_vm_status(check_status)
+    except Exception as e:
+        logging.error(" Error Response :"+ response.text)
+        logging.error(e)
+        sys.exit(1)
+
+
+###########################################################################################################################
+# This function is to check the VM status . Incase when there is request to start or stop the Azure VM then the job would
+# Wait till the VM reaches the status either stopped or running status
+###########################################################################################################################
+def check_vm_status(status):
+    logging.info("Invoking Azure Check VM status function")
+         # -- Set the request parameters
+    url = 'https://management.azure.com/subscriptions/'+args.subscription_id+'/resourceGroups/'\
+        +args.resource_group_name+'/providers/Microsoft.Compute/virtualMachines/'+args.vm_name \
+        +'/instanceView?api-version='+args.api_version
+    logging.info("Azure API URL: "+url)
+    #logging.info("token:"+args.Azure_vm_access_token)
+    token="Bearer "+args.Azure_vm_access_token
+    header={'Authorization':token,'content-type':'application/json', 'accept':'application/json'}
+    if status == "normal_check" or status == "check_delete":
+        try:
+            logging.info('Attempting Azure API : Instance View')
+            response=requests.get(url,headers=header)
+            logging.info("Response code:"+ str(response.status_code))
+            if (response.status_code != 200):
+                logging.error("Error in Checking the status : "+args.vm_name)
+                logging.error(response)
+                if(response.status_code == 401):
+                    logging.error("Bearer access Token expired or incorrect")
+                elif (response.status_code == 204):
+                    logging.error("No Content")
+                sys.exit(1)
+            else:
+                format_response=response.json()
+                logging.info("Retrieving VM Info:")
+                if status == "normal_check":
+                    logging.info("code: "+ format_response['statuses'][1]['code'])
+                    logging.info("Display Status : "+ format_response['statuses'][1]['displayStatus'])
+                else:
+                    logging.info("code: "+ format_response['statuses'][0]['code'])
+                    logging.info("Display Status : "+ format_response['statuses'][0]['displayStatus'])
+                print("Response from Azure API call :",response.text)
+        except Exception as e:
+            logging.error("Error Response :"+ response.text)
+            logging.error(e)
+            sys.exit(1)
+    if status == "Running":
+        end_status="VM running"
+        transition_status ="VM starting"
+    elif status == "Stopped":
+        end_status="VM stopped or VM deallocated"
+        transition_status = "VM deallocating or VM stopping"
+    if (status == "Running" or status == "Stopped"):
+        while True:
+            try:
+                response=requests.get(url,headers=header)
+                logging.info("Response code:"+ str(response.status_code))
+                format_response=response.json()
+                if (response.status_code != 200):
+                    logging.error("Error in Checking the status : "+args.vm_name)
+                    print("Response from Azure API call :",response.text)
+                    if(response.status_code == 401):
+                        logging.error("Bearer access Token expired or incorrect")
+                    elif (response.status_code == 204):
+                        logging.error("No Content")
+                    logging.error(response)
+                    sys.exit(1)
+                else:
+                    if format_response['statuses'][1]['displayStatus'] in end_status:
+                        logging.info("code: "+ format_response['statuses'][1]['code'])
+                        logging.info("Display Status : "+ format_response['statuses'][1]['displayStatus'])
+                        logging.info("VM :"+args.vm_name+ " "+status+" successfully.")
+                        print("Response from Azure API call :",response.text)
+                        sys.exit(0)
+                        break
+                    elif format_response['statuses'][1]['displayStatus'] in transition_status:
+                        time.sleep(10)
+                    else:
+                        print("Response from Azure API call :",response.text)
+                        sys.exit(1)
+            except Exception as e:
+                logging.error("Error Response :"+ response.text)
+                logging.error(e)
+                sys.exit(1)
+
+def list_all_vm_status():
+    logging.info("Invoking Azure VM list all function")
+    # -- Set the request parameters
+    url = 'https://management.azure.com/subscriptions/'+args.subscription_id+ \
+          '/providers/Microsoft.Compute/virtualMachines/'+'?api-version='+args.api_version
+    logging.info("Azure API URL: "+url)
+    #logging.info("token:"+args.Azure_vm_access_token)
+    token="Bearer "+args.Azure_vm_access_token
+    header={'Authorization':token,'content-type':'application/json', 'accept':'application/json'}
+    try:
+        logging.info('Attempting to make Azure Post API call to Stop VM')
+        response=requests.get(url,headers=header)
+        if (response.status_code != 200):
+            logging.error("Error in listing all the VM:"+args.vm_name)
+            if(response.status_code == 401):
+                logging.error("Bearer access Token expired or incorrect")
+            elif (response.status_code == 204):
+                logging.error("No Content")
+            logging.error(response)
+            sys.exit(1)
+        else:
+            format_response=response.json()
+            logging.info("*************************************************************")
+            for vm in format_response['value']:
+                vm_name=vm['name']
+                vm_locations=vm['location']
+                vm_hardware=vm['properties']['hardwareProfile']['vmSize']
+                vm_os=vm['properties']['storageProfile']['osDisk']['osType']
+                logging.info("#VM Name# :"+vm_name+" #VM location# :"+vm_locations+" #VM Hardware Size# :"+vm_hardware+" #VM OS# :"+vm_os)
+            logging.info("*************************************************************")
+            print("Response from Azure API call :"+str(response.text))
+    except Exception as e:
+        logging.error(" Error Response :"+ response.text)
+        logging.error(e)
+        sys.exit(1)
+# --
+# -- Execute
+main()</script><broadcast_cluster_var_check>false</broadcast_cluster_var_check><agent_type>1</agent_type><script_type_windows>uapy</script_type_windows><automatic_output_fr>0</automatic_output_fr><agent_cluster/><name>AZ-VM-Start-Stop-Terminate-Instance</name><exit_codes>0</exit_codes><broadcast_cluster/><use_common_script>true</use_common_script><credentials/><icon_filesize>7468</icon_filesize><icon>iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAIAAADYYG7QAAABhGlDQ1BJQ0MgcHJvZmlsZQAAKJF9kT1Iw0AcxV9TpVqqDnYQcchQnSyIijhKFYtgobQVWnUwufQLmjQkKS6OgmvBwY/FqoOLs64OroIg+AHi5Oik6CIl/i8ptIjx4Lgf7+497t4BQqPCVLNrAlA1y0jFY2I2tyoGXiGgH72YRVBipp5IL2bgOb7u4ePrXZRneZ/7c/QpeZMBPpF4jumGRbxBPLNp6Zz3icOsJCnE58TjBl2Q+JHrsstvnIsOCzwzbGRS88RhYrHYwXIHs5KhEk8TRxRVo3wh67LCeYuzWqmx1j35C0N5bSXNdZojiGMJCSQhQkYNZVRgIUqrRoqJFO3HPPzDjj9JLplcZTByLKAKFZLjB/+D392ahalJNykUA7pfbPtjFAjsAs26bX8f23bzBPA/A1da219tALOfpNfbWuQIGNgGLq7bmrwHXO4AQ0+6ZEiO5KcpFArA+xl9Uw4YvAWCa25vrX2cPgAZ6mr5Bjg4BMaKlL3u8e6ezt7+PdPq7wdtl3KlMp+vwAAAAAlwSFlzAAALEwAACxMBAJqcGAAAAAd0SU1FB+QCDgoXLZbVilIAABs7SURBVFgJATAbz+QB////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//8A3Ob18PT7AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPz9/8PV7szd8w4KBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2+f2vyOqDwOw2JA4CAgH6+/74+v0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAA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</icon><credential_fr>0</credential_fr><description>Windows and Linux</description><environment_variables_fr>0</environment_variables_fr><agent_var/><icon_filename>Azure Icon.png</icon_filename><sys_id>471709e4d9604ed3a197f2e94b66f434</sys_id><variable_prefix>VM</variable_prefix><system_template>false</system_template><script_windows/><credentials_var_check>false</credentials_var_check><agent_fr>0</agent_fr><agent_var_check>false</agent_var_check><output_failure_only>false</output_failure_only><output_return_sline>1</output_return_sline><output_type>1</output_type><desktop_interact>false</desktop_interact><script_unix/><output_return_file/><run_as_sudo>false</run_as_sudo><broadcast_cluster_var/><environment/><elevate_user>false</elevate_user><exit_code_output/><exit_code_processing>1</exit_code_processing><create_console>false</create_console><related_items_node><ops_unv_tmplt_field action="INSERT_OR_UPDATE"><choice_sort_option>1</choice_sort_option><form_start_row>false</form_start_row><sys_updated_on>2020-07-05 21:25:10</sys_updated_on><boolean_value_type>1</boolean_value_type><required>true</required><field_mask/><boolean_no_value/><require_if_field/><sys_id>31f8d524b18e4d8c96aa3bdcfffa6c46</sys_id><require_if_field_value/><array_name_title/><sys_updated_by>Ravi</sys_updated_by><array_value_title/><sys_created_on>2020-07-05 21:18:35</sys_created_on><field_value/><no_space_if_hidden>false</no_space_if_hidden><require_if_visible>false</require_if_visible><sys_created_by>Ravi</sys_created_by><int_field_min/><universal_template_id>471709e4d9604ed3a197f2e94b66f434</universal_template_id><show_if_field/><boolean_yes_value/><form_col_span>1</form_col_span><field_length/><form_end_row>false</form_end_row><label>subscription Id</label><int_field_max/><choice_allow_empty>false</choice_allow_empty><sequence>3</sequence><show_if_field_value/><form_row_span>1</form_row_span><default_list_view>false</default_list_view><hint>Azure Account subscription id</hint><field_mapping>textField2</field_mapping><name>subscription_id</name><field_regex/><field_type>1</field_type></ops_unv_tmplt_field><ops_unv_tmplt_field action="INSERT_OR_UPDATE"><choice_sort_option>1</choice_sort_option><form_start_row>false</form_start_row><sys_updated_on>2020-07-08 09:18:43</sys_updated_on><boolean_value_type>1</boolean_value_type><required>false</required><field_mask/><boolean_no_value/><require_if_field/><sys_id>46bc37cdb2c7429098c9f4589bf6300c</sys_id><require_if_field_value/><array_name_title/><sys_updated_by>Ravi</sys_updated_by><array_value_title/><sys_created_on>2020-07-05 21:21:19</sys_created_on><field_value/><no_space_if_hidden>true</no_space_if_hidden><require_if_visible>true</require_if_visible><sys_created_by>Ravi</sys_created_by><int_field_min/><universal_template_id>471709e4d9604ed3a197f2e94b66f434</universal_template_id><show_if_field>choiceField1</show_if_field><boolean_yes_value/><form_col_span>1</form_col_span><field_length/><form_end_row>false</form_end_row><label>VM Name</label><int_field_max/><choice_allow_empty>false</choice_allow_empty><sequence>4</sequence><show_if_field_value>start_vm,stop_vm,terminate_vm,vm_status</show_if_field_value><form_row_span>1</form_row_span><default_list_view>false</default_list_view><hint>Provide the VM Name </hint><field_mapping>textField3</field_mapping><name>vm_name</name><field_regex/><field_type>1</field_type></ops_unv_tmplt_field><ops_unv_tmplt_field action="INSERT_OR_UPDATE"><choice_sort_option>1</choice_sort_option><form_start_row>false</form_start_row><sys_updated_on>2020-07-06 09:50:02</sys_updated_on><boolean_value_type>1</boolean_value_type><required>true</required><field_mask/><boolean_no_value/><require_if_field/><sys_id>a51559c004f34118a843d98af7af5694</sys_id><require_if_field_value/><array_name_title/><sys_updated_by>Ravi</sys_updated_by><array_value_title/><sys_created_on>2020-07-06 09:49:55</sys_created_on><field_value/><no_space_if_hidden>false</no_space_if_hidden><require_if_visible>false</require_if_visible><sys_created_by>Ravi</sys_created_by><int_field_min/><universal_template_id>471709e4d9604ed3a197f2e94b66f434</universal_template_id><show_if_field/><boolean_yes_value/><form_col_span>1</form_col_span><field_length/><form_end_row>false</form_end_row><label>Access Token Variable</label><int_field_max/><choice_allow_empty>false</choice_allow_empty><sequence>6</sequence><show_if_field_value/><form_row_span>1</form_row_span><default_list_view>false</default_list_view><hint>Oauth2.0 access token to be generated thru another job and store it in UAC global or wokflow variable, here provide the variable name in format e.g Azure_access_token</hint><field_mapping>textField5</field_mapping><name>access_token_variable</name><field_regex/><field_type>1</field_type></ops_unv_tmplt_field><ops_unv_tmplt_field action="INSERT_OR_UPDATE"><choice_sort_option>1</choice_sort_option><form_start_row>false</form_start_row><sys_updated_on>2020-07-05 21:09:16</sys_updated_on><boolean_value_type>1</boolean_value_type><required>false</required><field_mask/><boolean_no_value/><require_if_field/><sys_id>d46aa28de6a54dacadf876a09b1901fe</sys_id><require_if_field_value/><array_name_title/><sys_updated_by>Ravi</sys_updated_by><array_value_title/><sys_created_on>2020-07-05 21:09:16</sys_created_on><field_value/><no_space_if_hidden>false</no_space_if_hidden><require_if_visible>false</require_if_visible><sys_created_by>Ravi</sys_created_by><int_field_min/><universal_template_id>471709e4d9604ed3a197f2e94b66f434</universal_template_id><show_if_field/><boolean_yes_value/><form_col_span>1</form_col_span><field_length/><form_end_row>false</form_end_row><label>VM Function</label><int_field_max/><choice_allow_empty>false</choice_allow_empty><sequence>1</sequence><show_if_field_value/><form_row_span>1</form_row_span><default_list_view>false</default_list_view><hint>Select the VM Function</hint><field_mapping>choiceField1</field_mapping><name>function</name><field_regex/><field_type>4</field_type></ops_unv_tmplt_field><ops_unv_tmplt_field action="INSERT_OR_UPDATE"><choice_sort_option>1</choice_sort_option><form_start_row>false</form_start_row><sys_updated_on>2020-07-08 09:18:26</sys_updated_on><boolean_value_type>1</boolean_value_type><required>false</required><field_mask/><boolean_no_value/><require_if_field/><sys_id>db7ba77262174e19895d1ce4316d7e01</sys_id><require_if_field_value/><array_name_title/><sys_updated_by>Ravi</sys_updated_by><array_value_title/><sys_created_on>2020-07-05 21:17:05</sys_created_on><field_value/><no_space_if_hidden>true</no_space_if_hidden><require_if_visible>true</require_if_visible><sys_created_by>Ravi</sys_created_by><int_field_min/><universal_template_id>471709e4d9604ed3a197f2e94b66f434</universal_template_id><show_if_field>choiceField1</show_if_field><boolean_yes_value/><form_col_span>1</form_col_span><field_length/><form_end_row>false</form_end_row><label>Resource Group Name</label><int_field_max/><choice_allow_empty>false</choice_allow_empty><sequence>2</sequence><show_if_field_value>start_vm,stop_vm,terminate_vm,vm_status</show_if_field_value><form_row_span>1</form_row_span><default_list_view>false</default_list_view><hint>Provide the resource group name that is associated with the VM</hint><field_mapping>textField1</field_mapping><name>resource_group_name</name><field_regex/><field_type>1</field_type></ops_unv_tmplt_field><ops_unv_tmplt_field action="INSERT_OR_UPDATE"><choice_sort_option>1</choice_sort_option><form_start_row>false</form_start_row><sys_updated_on>2020-07-05 21:23:33</sys_updated_on><boolean_value_type>1</boolean_value_type><required>true</required><field_mask/><boolean_no_value/><require_if_field/><sys_id>fb8cd1656a314cf8b95c43c775173a53</sys_id><require_if_field_value/><array_name_title/><sys_updated_by>Ravi</sys_updated_by><array_value_title/><sys_created_on>2020-07-05 21:23:33</sys_created_on><field_value/><no_space_if_hidden>false</no_space_if_hidden><require_if_visible>false</require_if_visible><sys_created_by>Ravi</sys_created_by><int_field_min/><universal_template_id>471709e4d9604ed3a197f2e94b66f434</universal_template_id><show_if_field/><boolean_yes_value/><form_col_span>1</form_col_span><field_length/><form_end_row>false</form_end_row><label>Api-version</label><int_field_max/><choice_allow_empty>false</choice_allow_empty><sequence>5</sequence><show_if_field_value/><form_row_span>1</form_row_span><default_list_view>false</default_list_view><hint>e.g. 2019-12-01</hint><field_mapping>textField4</field_mapping><name>api_version</name><field_regex/><field_type>1</field_type></ops_unv_tmplt_field><ops_unv_tmplt_field_choice action="INSERT_OR_UPDATE"><field_id>d46aa28de6a54dacadf876a09b1901fe</field_id><use_field_value_for_label>false</use_field_value_for_label><sys_id>0d6d3798469f4b0eba102854b3f6c08e</sys_id><sequence>2</sequence><sys_updated_by>Ravi</sys_updated_by><sys_created_on>2020-07-05 21:10:25</sys_created_on><field_value_label>Terminate VM</field_value_label><field_value>terminate_vm</field_value><sys_updated_on>2020-07-05 21:10:25</sys_updated_on><sys_created_by>Ravi</sys_created_by><universal_template_id>471709e4d9604ed3a197f2e94b66f434</universal_template_id></ops_unv_tmplt_field_choice><ops_unv_tmplt_field_choice action="INSERT_OR_UPDATE"><field_id>d46aa28de6a54dacadf876a09b1901fe</field_id><use_field_value_for_label>false</use_field_value_for_label><sys_id>2058aefc4e0447a9a0a4fc85752a49e6</sys_id><sequence>0</sequence><sys_updated_by>Ravi</sys_updated_by><sys_created_on>2020-07-05 21:09:35</sys_created_on><field_value_label>Start VM</field_value_label><field_value>start_vm</field_value><sys_updated_on>2020-07-05 21:09:35</sys_updated_on><sys_created_by>Ravi</sys_created_by><universal_template_id>471709e4d9604ed3a197f2e94b66f434</universal_template_id></ops_unv_tmplt_field_choice><ops_unv_tmplt_field_choice action="INSERT_OR_UPDATE"><field_id>d46aa28de6a54dacadf876a09b1901fe</field_id><use_field_value_for_label>false</use_field_value_for_label><sys_id>20bc8d629b4447d9af41f1a3bf8cb3f1</sys_id><sequence>1</sequence><sys_updated_by>Ravi</sys_updated_by><sys_created_on>2020-07-05 21:09:58</sys_created_on><field_value_label>Stop VM</field_value_label><field_value>stop_vm</field_value><sys_updated_on>2020-07-05 21:09:58</sys_updated_on><sys_created_by>Ravi</sys_created_by><universal_template_id>471709e4d9604ed3a197f2e94b66f434</universal_template_id></ops_unv_tmplt_field_choice><ops_unv_tmplt_field_choice action="INSERT_OR_UPDATE"><field_id>d46aa28de6a54dacadf876a09b1901fe</field_id><use_field_value_for_label>false</use_field_value_for_label><sys_id>66c842fefcf64e20949feec6a9e0a418</sys_id><sequence>3</sequence><sys_updated_by>Ravi</sys_updated_by><sys_created_on>2020-07-05 21:10:57</sys_created_on><field_value_label>VM Status</field_value_label><field_value>vm_status</field_value><sys_updated_on>2020-07-05 21:10:57</sys_updated_on><sys_created_by>Ravi</sys_created_by><universal_template_id>471709e4d9604ed3a197f2e94b66f434</universal_template_id></ops_unv_tmplt_field_choice><ops_unv_tmplt_field_choice action="INSERT_OR_UPDATE"><field_id>d46aa28de6a54dacadf876a09b1901fe</field_id><use_field_value_for_label>false</use_field_value_for_label><sys_id>e50d71a25fb049d68a206f733dffb1f6</sys_id><sequence>4</sequence><sys_updated_by>Ravi</sys_updated_by><sys_created_on>2020-07-05 21:11:32</sys_created_on><field_value_label>List All VM</field_value_label><field_value>list_all_vm</field_value><sys_updated_on>2020-07-05 21:11:32</sys_updated_on><sys_created_by>Ravi</sys_created_by><universal_template_id>471709e4d9604ed3a197f2e94b66f434</universal_template_id></ops_unv_tmplt_field_choice></related_items_node></ops_unv_tmplt></unload>
